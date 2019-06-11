@@ -1,6 +1,9 @@
 - hosts: all
 
   tasks:
+  - selinux:
+      state: disabled
+
   - name: Add IUS repo
     shell: curl -s https://setup.ius.io | /bin/bash -
     args:
@@ -12,10 +15,23 @@
   - name: Add Docker repo
     shell: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
+  - name: Add kubernetes.repo
+    copy:
+      dest: /etc/yum.repos.d/kubernetes.repo
+      content: |
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
+        enabled=1
+        gpgcheck=1
+        repo_gpgcheck=1
+        gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        exclude=kube*
+
   - name: Install Git
     yum:
       name: git2u
-      state: latest
+      state: present
 
   - name: Install Docker dependencies
     yum:
@@ -27,13 +43,32 @@
       name: ['docker-ce', 'docker-ce-cli', 'containerd.io']
       state: present
 
+  - name: Change cgroup driver
+    copy:
+      dest: /etc/docker/daemon.json
+      content: |
+        {
+          "exec-opts": ["native.cgroupdriver=systemd"],
+          "log-driver": "json-file",
+          "log-opts": {
+            "max-size": "100m"
+          },
+          "storage-driver": "overlay2",
+          "storage-opts": [
+            "overlay2.override_kernel_check=true"
+          ]
+        }
+
+  - name: swapoff
+    shell: swapoff -a
+
   - name: Start Docker service
     systemd:
       name: docker
       state: started
       enabled: yes
 
-  - name: Create ssh directory if it does not exist
+  - name: Create an ssh directory if it does not exist
     file:
       path: /root/.ssh
       state: directory
@@ -41,6 +76,21 @@
 
   - name: Disable host key verification
     copy:
-      content: "Host *\n   StrictHostKeyChecking no\n   UserKnownHostsFile=/dev/null\n"
+      content: |
+        Host *
+           StrictHostKeyChecking no
+           UserKnownHostsFile=/dev/null
       dest: /root/.ssh/config
       mode: u=rw,g=r,o=r
+
+  - name: Install K8s
+    yum:
+      name: ['kubelet', 'kubeadm', 'kubectl']
+      state: present
+      disable_excludes: kubernetes
+
+  - name: Enable kubelet service
+    systemd:
+      name: kubelet
+      enabled: yes
+
