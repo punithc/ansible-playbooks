@@ -1,0 +1,46 @@
+- hosts: all
+
+  tasks:
+  - name: Add IUS repo
+    shell: curl -s https://setup.ius.io | /bin/bash -
+    args:
+      warn: false
+    ignore_errors: yes
+    register: output
+    failed_when: "output.rc > 1"
+
+  - name: Add Docker repo
+    shell: yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+  - name: Install Git
+    yum:
+      name: git2u
+      state: latest
+
+  - name: Install Docker dependencies
+    yum:
+      name: ['yum-utils', 'device-mapper-persistent-data', 'lvm2']
+      state: present
+
+  - name: Install Docker
+    yum:
+      name: ['docker-ce', 'docker-ce-cli', 'containerd.io']
+      state: present
+
+  - name: Start Docker service
+    systemd:
+      name: docker
+      state: started
+      enabled: yes
+
+  - name: Create ssh directory if it does not exist
+    file:
+      path: /root/.ssh
+      state: directory
+      mode: '0700'
+
+  - name: Disable host key verification
+    copy:
+      content: "Host *\n   StrictHostKeyChecking no\n   UserKnownHostsFile=/dev/null\n"
+      dest: /root/.ssh/config
+      mode: u=rw,g=r,o=r
